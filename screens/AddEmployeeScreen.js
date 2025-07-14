@@ -1,12 +1,54 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, Alert, StyleSheet, ActivityIndicator } from 'react-native';
-import { collection, addDoc } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  Alert,
+  StyleSheet,
+  ActivityIndicator,
+  FlatList,
+  TouchableOpacity,
+} from 'react-native';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  deleteDoc,
+  doc,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { getLogin } from '../services/storage';
 
 const AddEmployeeScreen = () => {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [fetching, setFetching] = useState(false);
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
+  const fetchEmployees = async () => {
+    setFetching(true);
+    try {
+      const q = query(collection(db, 'employees'), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      const list = snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setEmployees(list);
+    } catch (err) {
+      console.error('Error fetching employees:', err);
+      Alert.alert('Error', 'Could not load employees.');
+    } finally {
+      setFetching(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!name.trim()) {
@@ -22,8 +64,9 @@ const AddEmployeeScreen = () => {
         createdBy: role,
         createdAt: new Date().toISOString(),
       });
-      Alert.alert('Success', 'Employee added successfully');
       setName('');
+      fetchEmployees();
+      Alert.alert('Success', 'Employee added');
     } catch (err) {
       console.error('Error adding employee:', err);
       Alert.alert('Error', 'Failed to add employee');
@@ -32,10 +75,46 @@ const AddEmployeeScreen = () => {
     }
   };
 
+  const confirmDelete = (employeeId, name) => {
+    Alert.alert(
+      'Delete Employee',
+      `Are you sure you want to delete ${name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => handleDelete(employeeId),
+        },
+      ]
+    );
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'employees', id));
+      fetchEmployees();
+      Alert.alert('Deleted', 'Employee has been removed');
+    } catch (err) {
+      console.error('Error deleting employee:', err);
+      Alert.alert('Error', 'Failed to delete employee');
+    }
+  };
+
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      onLongPress={() => confirmDelete(item.id, item.name)}
+      style={styles.employeeCard}
+    >
+      <Text style={styles.employeeName}>{item.name}</Text>
+      <Text style={styles.createdBy}>Added by: {item.createdBy}</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Add New Employee</Text>
-      
+
       <TextInput
         placeholder="Employee Full Name"
         placeholderTextColor="#999"
@@ -49,7 +128,7 @@ const AddEmployeeScreen = () => {
         style={({ pressed }) => [
           styles.button,
           pressed && styles.buttonPressed,
-          loading && styles.buttonDisabled
+          loading && styles.buttonDisabled,
         ]}
         onPress={handleAdd}
         disabled={loading}
@@ -60,6 +139,22 @@ const AddEmployeeScreen = () => {
           <Text style={styles.buttonText}>Add Employee</Text>
         )}
       </Pressable>
+
+      <Text style={styles.subHeader}>Existing Employees</Text>
+
+      {fetching ? (
+        <ActivityIndicator size="large" style={{ marginTop: 20 }} />
+      ) : (
+        <FlatList
+          data={employees}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No employees added yet.</Text>
+          }
+        />
+      )}
     </View>
   );
 };
@@ -77,13 +172,19 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
   },
+  subHeader: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginVertical: 16,
+    color: '#444',
+  },
   input: {
     backgroundColor: 'white',
     borderWidth: 1,
     borderColor: '#CAD7DF',
     padding: 14,
     borderRadius: 8,
-    marginBottom: 20,
+    marginBottom: 16,
     fontSize: 16,
     color: '#333',
   },
@@ -104,6 +205,29 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     backgroundColor: '#9BA8B7',
+  },
+  employeeCard: {
+    backgroundColor: '#fff',
+    borderRadius: 6,
+    padding: 14,
+    marginBottom: 10,
+    borderLeftWidth: 5,
+    borderLeftColor: '#5A6D80',
+  },
+  employeeName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  createdBy: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#777',
+  },
+  emptyText: {
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 20,
   },
 });
 

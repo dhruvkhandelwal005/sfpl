@@ -10,11 +10,11 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { collection, getDocs, query, orderBy, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { Picker } from '@react-native-picker/picker';
 import { exportToExcel } from '../utils/excelExport';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const AttendanceRecordsScreen = () => {
   const [records, setRecords] = useState([]);
@@ -34,14 +34,15 @@ const AttendanceRecordsScreen = () => {
   const fetchRecords = async () => {
     try {
       setLoading(true);
-
       const empSnap = await getDocs(collection(db, 'employees'));
       const empMap = {};
       const empList = [];
+
       empSnap.docs.forEach((doc) => {
         empMap[doc.id] = doc.data().name;
         empList.push({ id: doc.id, name: doc.data().name });
       });
+
       setEmployeesMap(empMap);
       setEmployeeOptions(empList);
 
@@ -56,7 +57,6 @@ const AttendanceRecordsScreen = () => {
       applyFilter(selectedFilter, selectedEmployeeId, data, empMap);
     } catch (err) {
       Alert.alert('Error', 'Failed to load attendance records');
-      console.error('Error fetching attendance:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -148,9 +148,29 @@ const AttendanceRecordsScreen = () => {
       Alert.alert('Success', 'Filtered records deleted');
       fetchRecords();
     } catch (err) {
-      console.error('Delete error:', err);
       Alert.alert('Error', 'Failed to delete records');
     }
+  };
+
+  const deleteSingleRecord = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'attendance', id));
+      Alert.alert('Deleted', 'Record deleted');
+      fetchRecords();
+    } catch (err) {
+      Alert.alert('Error', 'Could not delete record');
+    }
+  };
+
+  const handleLongPress = (item) => {
+    Alert.alert(
+      'Delete Record',
+      'Do you want to delete this attendance record?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteSingleRecord(item.id) },
+      ]
+    );
   };
 
   const formatTime = (ts) => {
@@ -181,28 +201,22 @@ const AttendanceRecordsScreen = () => {
     const dateObj = new Date(item.timestamp);
 
     return (
-      <View style={styles.record}>
-        <View style={styles.recordHeader}>
-          <Text style={styles.name}>{name}</Text>
-          <Text style={styles.typeBadge}>{item.type.toUpperCase()}</Text>
+      <Pressable onLongPress={() => handleLongPress(item)}>
+        <View style={styles.record}>
+          <View style={styles.recordHeader}>
+            <Text style={styles.name}>{name}</Text>
+            <Text style={styles.typeBadge}>{item.type.toUpperCase()}</Text>
+          </View>
+          <View style={styles.recordDetails}>
+            <Text style={styles.detailText}>Marked by {item.markedBy}</Text>
+            <Text style={styles.detailText}>Day: {getDayLabel(dateObj)}</Text>
+            <Text style={styles.detailText}>Time: {formatTime(dateObj)}</Text>
+            <Text style={styles.detailText}>Date: {formatDate(dateObj)}</Text>
+          </View>
         </View>
-        <View style={styles.recordDetails}>
-          <Text style={styles.detailText}>Marked by {item.markedBy}</Text>
-          <Text style={styles.detailText}>Day: {getDayLabel(dateObj)}</Text>
-          <Text style={styles.detailText}>Time: {formatTime(dateObj)}</Text>
-          <Text style={styles.detailText}>Date: {formatDate(dateObj)}</Text>
-        </View>
-      </View>
+      </Pressable>
     );
   };
-
-  if (loading && !refreshing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#5A6D80" />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -224,15 +238,10 @@ const AttendanceRecordsScreen = () => {
         }
       />
 
-      {/* Floating Button */}
-      <Pressable
-        onPress={() => setModalVisible(true)}
-        style={styles.fab}
-      >
+      <Pressable onPress={() => setModalVisible(true)} style={styles.fab}>
         <MaterialIcons name="filter-list" size={28} color="white" />
       </Pressable>
 
-      {/* Modal for Filter Options */}
       <Modal
         visible={modalVisible}
         transparent
